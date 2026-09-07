@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 @MainActor
@@ -77,6 +78,10 @@ struct CodexLimitBarApp: App {
             Label(store.menuTitle, systemImage: "gauge.with.dots.needle.67percent")
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            PreferencesView()
+        }
     }
 }
 
@@ -132,6 +137,13 @@ struct ContentView: View {
                 Text("\(store.accounts.count)/\(UsageStore.accountLimit) accounts · Switch login, then refresh once.")
                     .font(.caption2).foregroundStyle(.secondary)
                 Spacer()
+                if #available(macOS 14, *) {
+                    SettingsLink { Image(systemName: "gearshape") }.buttonStyle(.plain).help("Preferences")
+                } else {
+                    Button { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) } label: {
+                        Image(systemName: "gearshape")
+                    }.buttonStyle(.plain).help("Preferences")
+                }
                 Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain)
             }
         }
@@ -154,6 +166,57 @@ struct ContentView: View {
             Label("No other account recorded", systemImage: "person.2")
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+@MainActor
+final class LaunchAtLoginSetting: ObservableObject {
+    @Published var isEnabled = false
+    @Published var requiresApproval = false
+    @Published var error: String?
+
+    init() { reload() }
+
+    func setEnabled(_ enabled: Bool) {
+        do {
+            if enabled { try SMAppService.mainApp.register() }
+            else { try SMAppService.mainApp.unregister() }
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+        reload()
+    }
+
+    private func reload() {
+        let status = SMAppService.mainApp.status
+        isEnabled = status == .enabled
+        requiresApproval = status == .requiresApproval
+    }
+}
+
+struct PreferencesView: View {
+    @StateObject private var launchAtLogin = LaunchAtLoginSetting()
+
+    var body: some View {
+        Form {
+            Toggle("Start Codex Limit Bar at login", isOn: Binding(
+                get: { launchAtLogin.isEnabled },
+                set: { launchAtLogin.setEnabled($0) }
+            ))
+            if launchAtLogin.requiresApproval {
+                Text("Approval is required in System Settings → General → Login Items.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
+            }
+            if let error = launchAtLogin.error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .frame(width: 440, height: 190)
     }
 }
 
