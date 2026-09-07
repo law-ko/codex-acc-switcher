@@ -13,6 +13,10 @@ final class CodexLimitBarTests: XCTestCase {
         let resets = try CodexUsageClient.parseResetCredits(Data(#"{"available_count":2,"credits":[{"status":"available","expires_at":"2033-05-18T03:34:00.000Z"},{"expires_at":"2033-05-19T03:34:00Z"},{"status":"redeemed","expires_at":"2033-05-20T03:34:00Z"}]}"#.utf8))
         XCTAssertEqual(resets.available, 2)
         XCTAssertEqual(resets.expiries.count, 2)
+        XCTAssertNotEqual(
+            CodexUsageClient.identityKey(accountID: "shared-workspace", subject: "user-a", email: "a@example.com"),
+            CodexUsageClient.identityKey(accountID: "shared-workspace", subject: "user-b", email: "b@example.com")
+        )
 
         let current = AccountSnapshot(id: "a", email: "a@example.com", session: parsed.session, weekly: parsed.weekly, updatedAt: now)
         let usable = AccountSnapshot(id: "b", email: "b@example.com", session: .init(remaining: 20, resetsAt: nil), weekly: .init(remaining: 68, resetsAt: nil), updatedAt: now)

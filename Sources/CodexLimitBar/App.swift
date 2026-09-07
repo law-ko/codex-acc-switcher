@@ -40,7 +40,9 @@ final class UsageStore: ObservableObject {
         do {
             let snapshot = try await client.fetch()
             currentID = snapshot.id
-            accounts.removeAll { $0.id == snapshot.id }
+            accounts.removeAll {
+                $0.id == snapshot.id || (!$0.id.contains("|") && $0.email.caseInsensitiveCompare(snapshot.email) == .orderedSame)
+            }
             accounts.append(snapshot)
             accounts = Array(accounts.sorted { $0.updatedAt > $1.updatedAt }.prefix(Self.accountLimit))
             accounts.sort {

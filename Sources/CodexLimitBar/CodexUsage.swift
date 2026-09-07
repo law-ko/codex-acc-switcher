@@ -130,10 +130,20 @@ struct CodexUsageClient {
         guard let accountID else { throw CodexUsageError.invalidAuth }
         let email = Self.stringClaim("email", in: claims) ?? "Codex account"
         return AccountSnapshot(
-            id: accountID.lowercased(), email: email,
+            id: Self.identityKey(
+                accountID: accountID,
+                subject: Self.stringClaim("sub", in: claims),
+                email: email
+            ), email: email,
             session: usage.session, weekly: usage.weekly,
             resetCredits: usage.resetCredits, updatedAt: Date()
         )
+    }
+
+    static func identityKey(accountID: String, subject: String?, email: String) -> String {
+        let user = subject?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let principal = user.flatMap { $0.isEmpty ? nil : $0 } ?? email
+        return "\(principal)|\(accountID)".lowercased()
     }
 
     static func parseUsage(_ data: Data, response: HTTPURLResponse? = nil, now: Date = Date()) throws -> FetchedUsage {
