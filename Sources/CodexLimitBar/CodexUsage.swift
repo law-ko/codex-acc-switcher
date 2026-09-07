@@ -44,19 +44,26 @@ enum Recommendation: Equatable {
 }
 
 enum AccountChooser {
+    static func ordered(accounts: [AccountSnapshot], currentID: String?, now: Date) -> [AccountSnapshot] {
+        let current = accounts.filter { $0.id == currentID }
+        let others = accounts.filter { $0.id != currentID }.sorted { lhs, rhs in
+            let leftScore = lhs.score(at: now) ?? -1
+            let rightScore = rhs.score(at: now) ?? -1
+            if (leftScore > 0) != (rightScore > 0) { return leftScore > 0 }
+            if leftScore > 0, leftScore != rightScore { return leftScore > rightScore }
+            let leftReady = lhs.availableAt(from: now) ?? .distantFuture
+            let rightReady = rhs.availableAt(from: now) ?? .distantFuture
+            if leftReady != rightReady { return leftReady < rightReady }
+            return lhs.updatedAt > rhs.updatedAt
+        }
+        return current + others
+    }
+
     static func next(accounts: [AccountSnapshot], excluding currentID: String?, now: Date) -> Recommendation {
-        let others = accounts.filter { $0.id != currentID }
-        if let best = others
-            .compactMap({ account in account.score(at: now).map { (account, $0) } })
-            .filter({ $0.1 > 0 })
-            .max(by: { ($0.1, $0.0.updatedAt) < ($1.1, $1.0.updatedAt) })?.0 {
-            return .switchNow(best)
-        }
-        if let soonest = others
-            .compactMap({ account in account.availableAt(from: now).map { (account, $0) } })
-            .min(by: { $0.1 < $1.1 }) {
-            return .wait(soonest.0, soonest.1)
-        }
+        guard let candidate = ordered(accounts: accounts, currentID: currentID, now: now)
+            .first(where: { $0.id != currentID }) else { return .none }
+        if candidate.score(at: now).map({ $0 > 0 }) == true { return .switchNow(candidate) }
+        if let ready = candidate.availableAt(from: now) { return .wait(candidate, ready) }
         return .none
     }
 }

@@ -45,10 +45,7 @@ final class UsageStore: ObservableObject {
             }
             accounts.append(snapshot)
             accounts = Array(accounts.sorted { $0.updatedAt > $1.updatedAt }.prefix(Self.accountLimit))
-            accounts.sort {
-                if ($0.id == currentID) != ($1.id == currentID) { return $0.id == currentID }
-                return $0.email.localizedCaseInsensitiveCompare($1.email) == .orderedAscending
-            }
+            accounts = AccountChooser.ordered(accounts: accounts, currentID: currentID, now: Date())
             try save()
             error = nil
         } catch {
@@ -91,6 +88,7 @@ struct ContentView: View {
     @ObservedObject var store: UsageStore
 
     var body: some View {
+        let orderedAccounts = AccountChooser.ordered(accounts: store.accounts, currentID: store.currentID, now: Date())
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -117,8 +115,13 @@ struct ContentView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 10) {
-                        ForEach(store.accounts) { account in
-                            AccountRow(account: account, isCurrent: account.id == store.currentID)
+                        ForEach(Array(orderedAccounts.enumerated()), id: \.element.id) { index, account in
+                            AccountRow(
+                                account: account,
+                                rank: index + 1,
+                                isCurrent: account.id == store.currentID,
+                                isNext: account.id != store.currentID && index == (store.currentID == nil ? 0 : 1)
+                            )
                                 .contextMenu {
                                     if account.id != store.currentID {
                                         Button("Forget account", role: .destructive) { store.forget(account) }
@@ -224,13 +227,21 @@ struct PreferencesView: View {
 
 struct AccountRow: View {
     let account: AccountSnapshot
+    let rank: Int
     let isCurrent: Bool
+    let isNext: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
+                Text("\(rank)")
+                    .font(.caption.monospacedDigit().bold())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .background(.quaternary, in: Circle())
                 Text(account.email).fontWeight(isCurrent ? .semibold : .regular).lineLimit(1)
                 if isCurrent { Text("CURRENT").font(.system(size: 9, weight: .bold)).foregroundStyle(.blue) }
+                else if isNext { Text("NEXT").font(.system(size: 9, weight: .bold)).foregroundStyle(.green) }
                 Spacer()
                 Text(account.updatedAt, style: .relative).font(.caption2).foregroundStyle(.secondary)
             }

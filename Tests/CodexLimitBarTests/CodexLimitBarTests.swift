@@ -20,7 +20,10 @@ final class CodexLimitBarTests: XCTestCase {
 
         let current = AccountSnapshot(id: "a", email: "a@example.com", session: parsed.session, weekly: parsed.weekly, updatedAt: now)
         let usable = AccountSnapshot(id: "b", email: "b@example.com", session: .init(remaining: 20, resetsAt: nil), weekly: .init(remaining: 68, resetsAt: nil), updatedAt: now)
+        let best = AccountSnapshot(id: "d", email: "d@example.com", session: .init(remaining: 65, resetsAt: nil), weekly: .init(remaining: 90, resetsAt: nil), updatedAt: now)
         let temptingButBlocked = AccountSnapshot(id: "c", email: "c@example.com", session: .init(remaining: 100, resetsAt: nil), weekly: .init(remaining: 0, resetsAt: now.addingTimeInterval(500)), updatedAt: now)
-        XCTAssertEqual(AccountChooser.next(accounts: [current, usable, temptingButBlocked], excluding: "a", now: now), .switchNow(usable))
+        let accounts = [usable, temptingButBlocked, current, best]
+        XCTAssertEqual(AccountChooser.ordered(accounts: accounts, currentID: "a", now: now).map(\.id), ["a", "d", "b", "c"])
+        XCTAssertEqual(AccountChooser.next(accounts: accounts, excluding: "a", now: now), .switchNow(best))
     }
 }
