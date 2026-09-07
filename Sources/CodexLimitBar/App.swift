@@ -105,6 +105,7 @@ struct ContentView: View {
             }
 
             recommendation
+            readySessions
 
             if store.accounts.isEmpty && store.error == nil {
                 VStack(spacing: 8) {
@@ -170,6 +171,27 @@ struct ContentView: View {
         case .none:
             Label("No other account recorded", systemImage: "person.2")
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var readySessions: some View {
+        let accounts = AccountChooser.readyForNewSession(
+            accounts: store.accounts,
+            currentID: store.currentID,
+            now: Date()
+        )
+        if !accounts.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                Label("Ready to start a new 5-hour session", systemImage: "play.circle.fill")
+                    .font(.caption.bold()).foregroundStyle(.blue)
+                ForEach(accounts) { account in
+                    Text("• **\(account.email)** — switch and say hello")
+                        .font(.caption)
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
         }
     }
 }

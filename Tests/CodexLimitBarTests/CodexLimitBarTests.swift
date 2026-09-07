@@ -25,5 +25,9 @@ final class CodexLimitBarTests: XCTestCase {
         let accounts = [usable, temptingButBlocked, current, best]
         XCTAssertEqual(AccountChooser.ordered(accounts: accounts, currentID: "a", now: now).map(\.id), ["a", "d", "b", "c"])
         XCTAssertEqual(AccountChooser.next(accounts: accounts, excluding: "a", now: now), .switchNow(best))
+
+        let ready = AccountSnapshot(id: "e", email: "e@example.com", session: .init(remaining: 0, resetsAt: now.addingTimeInterval(-1)), weekly: .init(remaining: 50, resetsAt: nil), updatedAt: now)
+        let weeklyBlocked = AccountSnapshot(id: "f", email: "f@example.com", session: .init(remaining: 0, resetsAt: now.addingTimeInterval(-1)), weekly: .init(remaining: 0, resetsAt: now.addingTimeInterval(60)), updatedAt: now)
+        XCTAssertEqual(AccountChooser.readyForNewSession(accounts: [current, ready, weeklyBlocked], currentID: "a", now: now).map(\.id), ["e"])
     }
 }

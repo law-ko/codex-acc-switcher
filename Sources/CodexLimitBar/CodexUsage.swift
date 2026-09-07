@@ -66,6 +66,14 @@ enum AccountChooser {
         if let ready = candidate.availableAt(from: now) { return .wait(candidate, ready) }
         return .none
     }
+
+    static func readyForNewSession(accounts: [AccountSnapshot], currentID: String?, now: Date) -> [AccountSnapshot] {
+        ordered(accounts: accounts, currentID: currentID, now: now).filter { account in
+            account.id != currentID
+                && account.session?.resetsAt.map { $0 <= now } == true
+                && (account.weekly?.effectiveRemaining(at: now) ?? 0) > 0
+        }
+    }
 }
 
 struct FetchedUsage {
