@@ -10,11 +10,17 @@ struct LimitWindow: Codable, Equatable {
     }
 }
 
+struct ResetCredits: Codable, Equatable {
+    var available: Int
+    var expiries: [Date]
+}
+
 struct AccountSnapshot: Codable, Identifiable, Equatable {
     var id: String
     var email: String
     var session: LimitWindow?
     var weekly: LimitWindow?
+    var resetCredits: ResetCredits? = nil
     var updatedAt: Date
 
     func score(at date: Date) -> Double? {
@@ -58,6 +64,7 @@ enum AccountChooser {
 struct FetchedUsage {
     var session: LimitWindow?
     var weekly: LimitWindow?
+    var resetCredits: ResetCredits?
 }
 
 enum CodexUsageError: LocalizedError {
@@ -80,6 +87,7 @@ enum CodexUsageError: LocalizedError {
 
 struct CodexUsageClient {
     private static let usageURL = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
+    private static let resetCreditsURL = URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!
     private static let refreshURL = URL(string: "https://auth.openai.com/oauth/token")!
     private static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
@@ -107,7 +115,14 @@ struct CodexUsageClient {
             throw CodexUsageError.requestFailed(response.1.statusCode)
         }
 
-        let usage = try Self.parseUsage(response.0, response: response.1)
+        var usage = try Self.parseUsage(response.0, response: response.1)
+        if let resetResponse = try? await requestResetCredits(
+            token: accessToken,
+            accountID: token(named: "account_id", in: auth)
+        ), (200..<300).contains(resetResponse.1.statusCode),
+           let resetCredits = try? Self.parseResetCredits(resetResponse.0) {
+            usage.resetCredits = resetCredits
+        }
         let claims = Self.jwtPayload(token(named: "id_token", in: auth) ?? accessToken)
         let accountID = token(named: "account_id", in: auth)
             ?? Self.stringClaim("chatgpt_account_id", in: claims)
@@ -116,7 +131,8 @@ struct CodexUsageClient {
         let email = Self.stringClaim("email", in: claims) ?? "Codex account"
         return AccountSnapshot(
             id: accountID.lowercased(), email: email,
-            session: usage.session, weekly: usage.weekly, updatedAt: Date()
+            session: usage.session, weekly: usage.weekly,
+            resetCredits: usage.resetCredits, updatedAt: Date()
         )
     }
 
@@ -138,8 +154,27 @@ struct CodexUsageClient {
         let candidates = [primary, secondary].compactMap { $0 }
         return FetchedUsage(
             session: window(.session, from: candidates, now: now),
-            weekly: window(.weekly, from: candidates, now: now)
+            weekly: window(.weekly, from: candidates, now: now),
+            resetCredits: embeddedResetCredits(in: body)
         )
+    }
+
+    static func parseResetCredits(_ data: Data) throws -> ResetCredits {
+        guard let body = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let available = number(body["available_count"]), available >= 0 else {
+            throw CodexUsageError.invalidResponse
+        }
+        let expiries = (body["credits"] as? [[String: Any]] ?? [])
+            .filter { ($0["status"] as? String).map { $0 == "available" } ?? true }
+            .compactMap { isoDate($0["expires_at"] as? String) }
+            .sorted()
+        return ResetCredits(available: Int(available.rounded(.down)), expiries: expiries)
+    }
+
+    private static func embeddedResetCredits(in body: [String: Any]) -> ResetCredits? {
+        guard let value = body["rate_limit_reset_credits"] as? [String: Any],
+              let available = number(value["available_count"]), available >= 0 else { return nil }
+        return ResetCredits(available: Int(available.rounded(.down)), expiries: [])
     }
 
     private enum Kind { case session, weekly }
@@ -206,6 +241,20 @@ struct CodexUsageClient {
         return (data, response)
     }
 
+    private func requestResetCredits(token: String, accountID: String?) async throws -> (Data, HTTPURLResponse) {
+        var request = URLRequest(url: Self.resetCreditsURL)
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("CodexLimitBar", forHTTPHeaderField: "User-Agent")
+        request.setValue("codex-1", forHTTPHeaderField: "OpenAI-Beta")
+        request.setValue("Codex Desktop", forHTTPHeaderField: "originator")
+        if let accountID { request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-Id") }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse else { throw CodexUsageError.invalidResponse }
+        return (data, response)
+    }
+
     private func refresh(_ refreshToken: String) async throws -> [String: Any] {
         var request = URLRequest(url: Self.refreshURL)
         request.httpMethod = "POST"
@@ -263,5 +312,12 @@ struct CodexUsageClient {
         if let value = value as? NSNumber { return value.doubleValue }
         if let value = value as? String { return Double(value) }
         return nil
+    }
+
+    private static func isoDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }

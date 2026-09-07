@@ -3,6 +3,7 @@ import SwiftUI
 
 @MainActor
 final class UsageStore: ObservableObject {
+    static let accountLimit = 100
     @Published var accounts: [AccountSnapshot] = []
     @Published var currentID: String?
     @Published var isRefreshing = false
@@ -14,7 +15,8 @@ final class UsageStore: ObservableObject {
     init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         storageURL = support.appendingPathComponent("CodexLimitBar/accounts.json")
-        accounts = (try? JSONDecoder().decode([AccountSnapshot].self, from: Data(contentsOf: storageURL))) ?? []
+        let saved = (try? JSONDecoder().decode([AccountSnapshot].self, from: Data(contentsOf: storageURL))) ?? []
+        accounts = Array(saved.sorted { $0.updatedAt > $1.updatedAt }.prefix(Self.accountLimit))
         Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
@@ -39,7 +41,11 @@ final class UsageStore: ObservableObject {
             currentID = snapshot.id
             accounts.removeAll { $0.id == snapshot.id }
             accounts.append(snapshot)
-            accounts.sort { $0.email.localizedCaseInsensitiveCompare($1.email) == .orderedAscending }
+            accounts = Array(accounts.sorted { $0.updatedAt > $1.updatedAt }.prefix(Self.accountLimit))
+            accounts.sort {
+                if ($0.id == currentID) != ($1.id == currentID) { return $0.id == currentID }
+                return $0.email.localizedCaseInsensitiveCompare($1.email) == .orderedAscending
+            }
             try save()
             error = nil
         } catch {
@@ -66,8 +72,7 @@ struct CodexLimitBarApp: App {
     var body: some Scene {
         MenuBarExtra {
             ContentView(store: store)
-                .frame(width: 390)
-                .task { await store.refresh() }
+                .frame(width: 430)
         } label: {
             Label(store.menuTitle, systemImage: "gauge.with.dots.needle.67percent")
         }
@@ -114,7 +119,7 @@ struct ContentView: View {
                                 }
                         }
                     }
-                }.frame(maxHeight: 390)
+                }.frame(height: min(560, max(320, CGFloat(store.accounts.count) * 200 + 20)))
             }
 
             if let error = store.error {
@@ -124,7 +129,7 @@ struct ContentView: View {
 
             Divider()
             HStack {
-                Text("Switch Codex accounts, then refresh once to remember each one.")
+                Text("\(store.accounts.count)/\(UsageStore.accountLimit) accounts · Switch login, then refresh once.")
                     .font(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain)
@@ -166,9 +171,37 @@ struct AccountRow: View {
             }
             LimitRow(title: "5 hour", window: account.session)
             LimitRow(title: "Weekly", window: account.weekly)
+            ResetCreditsRow(credits: account.resetCredits)
         }
         .padding(12)
         .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 11))
+    }
+}
+
+struct ResetCreditsRow: View {
+    let credits: ResetCredits?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Label("Resets", systemImage: "arrow.counterclockwise.circle")
+                Spacer()
+                Text(credits.map { "\($0.available) available" } ?? "Not checked")
+            }
+            .font(.caption)
+            if let credits, credits.available > 0 {
+                Text(expiryText(credits))
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func expiryText(_ credits: ResetCredits) -> String {
+        guard !credits.expiries.isEmpty else { return "Expiry dates unavailable" }
+        let dates = credits.expiries.map { $0.formatted(date: .abbreviated, time: .shortened) }.joined(separator: ", ")
+        let missing = max(0, credits.available - credits.expiries.count)
+        return "Expires: \(dates)" + (missing > 0 ? " · \(missing) without expiry" : "")
     }
 }
 

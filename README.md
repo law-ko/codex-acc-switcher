@@ -1,6 +1,6 @@
 # Codex Limit Bar
 
-A native macOS menu-bar app that reads the active Codex CLI login, shows its 5-hour and weekly limits, remembers previously seen accounts, and recommends the next usable account.
+A native macOS menu-bar app that reads the active Codex CLI login, shows its 5-hour and weekly limits plus reset-credit expiries, remembers up to 100 previously seen accounts, and recommends the next usable account.
 
 ## Run from source
 
