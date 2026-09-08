@@ -50,7 +50,12 @@ enum AccountChooser {
             let leftScore = lhs.score(at: now) ?? -1
             let rightScore = rhs.score(at: now) ?? -1
             if (leftScore > 0) != (rightScore > 0) { return leftScore > 0 }
-            if leftScore > 0, leftScore != rightScore { return leftScore > rightScore }
+            if leftScore > 0 {
+                let leftExpiry = lhs.session?.resetsAt ?? .distantFuture
+                let rightExpiry = rhs.session?.resetsAt ?? .distantFuture
+                if leftExpiry != rightExpiry { return leftExpiry < rightExpiry }
+                if leftScore != rightScore { return leftScore > rightScore }
+            }
             let leftReady = lhs.availableAt(from: now) ?? .distantFuture
             let rightReady = rhs.availableAt(from: now) ?? .distantFuture
             if leftReady != rightReady { return leftReady < rightReady }
